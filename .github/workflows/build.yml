@@ -1,0 +1,83 @@
+name: Build
+
+# Every push to main and every pull request builds bo2audio.exe and keeps it as a workflow artifact.
+# A version tag (v1.2.3, v1.2.3-beta.1) also publishes it as a GitHub release. Creating a release with
+# a new tag in the web UI pushes that tag too, so it runs here as well and gets the exe attached.
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME -replace '^v' } else { '' }
+          ./publish.ps1 -Version $version
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          path: dist/bo2audio.exe
+          archive: false
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write     # create the release and upload the exe
+      id-token: write     # sign the build provenance
+      attestations: write # store the build provenance
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bo2audio.exe
+          path: dist
+
+      # Artifact attestations only work in public repositories on GitHub Free and Pro
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: ${{ !github.event.repository.private }}
+        with:
+          subject-path: dist/bo2audio.exe
+
+      - if: ${{ github.event.repository.private }}
+        run: echo "::notice::No build provenance for $GITHUB_REF_NAME, the repository is private."
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # Created in the web UI (or drafted for this tag): attach the exe to it
+            gh release upload "$TAG" dist/bo2audio.exe --clobber
+          else
+            # gh uploads the exe to a draft and publishes it afterwards
+            flags=(--verify-tag --generate-notes)
+            if [[ $TAG == *-* ]]; then flags+=(--prerelease); fi
+            gh release create "$TAG" dist/bo2audio.exe "${flags[@]}"
+          fi

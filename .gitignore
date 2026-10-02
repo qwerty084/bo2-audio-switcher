@@ -1,0 +1,5 @@
+screenshots/
+*.log
+bin/
+obj/
+dist/

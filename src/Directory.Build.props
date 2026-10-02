@@ -1,0 +1,11 @@
+<Project>
+
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Authors>Luca Hendrik Helms</Authors>
+    <Product>bo2-audio-switcher</Product>
+    <ApplicationIcon>$(MSBuildThisFileDirectory)app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+</Project>
